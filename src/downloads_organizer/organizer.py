@@ -8,7 +8,7 @@ from .filesystem import (
     list_entries,
     move_file,
 )
-from .models import OrganizeResult, SkipReason
+from .models import OrganizeResult, PlannedMove, SkipReason
 from .rules import destination_for, skip_reason_for
 
 LOGGER = logging.getLogger("downloads-organizer")
@@ -75,8 +75,9 @@ def organize(
         )
 
     LOGGER.info(
-        "Finished: moved=%d skipped=%d failed=%d",
+        "Finished: moved=%d would_move=%d skipped=%d failed=%d",
         result.moved,
+        result.would_move,
         result.skipped,
         result.failed,
     )
@@ -146,12 +147,19 @@ def process_file(
         target = destination / path.name
 
         if dry_run:
+            move = PlannedMove(
+                source=path,
+                destination=target,
+                mime=mime,
+            )
+
+            result.add_would_move(move)
+
             LOGGER.info(
                 "Would move: %s -> %s",
                 path,
                 target,
             )
-            result.add_move()
             return
 
         actual_target = move_file(path, target)
@@ -163,6 +171,9 @@ def process_file(
         )
 
         result.add_move()
+
+    except (OSError, RuntimeError) as exc:
+        record_failure(result, path, exc)
 
     except Exception as exc:
         result.add_failure(path, exc)
